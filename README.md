@@ -1,6 +1,14 @@
 # ristisana
 
+```cmd
+python3 -m pip  install -r requirements.txt
+```
+
 ## Nonogram
+```
+python3 nonogram.py converted.csv -s -t "Title"
+```
+
 
 LibreOffice Calc macro to convert colored cells to "1" and white/unset ones to "0":
 
@@ -30,4 +38,4 @@ Sub ColorToBinary
 End Sub
 ```
 
-File `converted.csv` has the expected data form for the python script.
+Example file `converted.csv` has the expected data form for the python script.

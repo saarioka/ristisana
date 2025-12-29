@@ -7,27 +7,29 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget
-from PyQt6.QtGui import QPainter, QColor, QPen, QFont
-from PyQt6.QtCore import Qt, QRectF
-from PyQt6.QtSvg import QSvgGenerator
+from PyQt6.QtGui import QPainter, QColor, QPen, QFont, QPdfWriter, QPageSize, QPageLayout
+from PyQt6.QtCore import Qt, QRectF, QSizeF
 
 
-def save_nonogram_as_svg(widget, filename="nonogram.svg"):
-    generator = QSvgGenerator()
-    generator.setFileName(filename)
-    generator.setSize(widget.size())
-    generator.setViewBox(widget.rect())
-    generator.setTitle("Nonogram")
-    generator.setDescription("Generated from PyQt6 Nonogram widget")
+def save_nonogram_as_pdf(widget, filename="nonogram.pdf", resolution=100):
+    pdf_writer = QPdfWriter(filename, )
+    #pdf_writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+    
+    # Set page size to match widget size in points
+    page_size = QPageSize(QSizeF(widget.width(), widget.height()), QPageSize.Unit.Point)
+    pdf_writer.setPageSize(page_size)
+    
+    # Optional: set resolution
+    pdf_writer.setResolution(resolution)
 
-    painter = QPainter(generator)
-    widget.render(painter)  # Render the widget onto the SVG
+    painter = QPainter(pdf_writer)
+    widget.render(painter)  # Render the widget onto the PDF
     painter.end()
-    print(f"Saved Nonogram as SVG: {filename}")
+    print(f"Saved Nonogram as PDF: {filename}")
 
 
 class NonogramWidget(QWidget):
-    def __init__(self, grid, row_clues, col_clues, cell_size=20, show_solution=False, parent=None):
+    def __init__(self, grid, row_clues, col_clues, cell_size=20, show_solution=False, title='Nonogram', parent=None):
         super().__init__(parent)
         self.grid = grid
         self.row_clues = row_clues
@@ -36,6 +38,7 @@ class NonogramWidget(QWidget):
         self.cell_size = cell_size
 
         self.show_solution = show_solution
+        self.title = title
 
         self.top_margin = max(len(clues) for clues in col_clues) * cell_size + 5
         self.left_margin = max(len(clues) for clues in row_clues) * cell_size + 5
@@ -82,12 +85,12 @@ class NonogramWidget(QWidget):
                 pen = pen_thin
             painter.setPen(pen)
             painter.drawLine(x, top_extent, x, self.top_margin + self.grid.shape[0]*self.cell_size)
-
+        
         # Draw clues
         painter.setPen(Qt.GlobalColor.black)
         
         # align center
-        font = QFont("Arial", int(self.cell_size*0.5), )
+        font = QFont("Arial", int(self.cell_size*0.6), QFont.Weight.Bold)
         painter.setFont(font)
 
         # Column clues
@@ -108,14 +111,24 @@ class NonogramWidget(QWidget):
                                     self.top_margin + i*self.cell_size, 
                                     self.cell_size, self.cell_size)
                 painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, str(val))
+        
+        bigfont = QFont("Arial", int(self.cell_size*0.7))
+        painter.setFont(bigfont)
+        painter.drawText(10, 100, self.title)
 
 
 class NonogramWindow(QMainWindow):
-    def __init__(self, grid, row_clues, col_clues, cell_size=20, show_solution=False):
+    def __init__(self, grid, row_clues, col_clues, cell_size=20, show_solution=False, title='Nonogram'):
         super().__init__()
-        self.setWindowTitle("Nonogram Viewer")
-        self.setCentralWidget(NonogramWidget(grid, row_clues, col_clues, cell_size=cell_size, show_solution=show_solution))
+        self.setWindowTitle(title)
+
+        self.nonogramwidget = NonogramWidget(grid, row_clues, col_clues, cell_size=cell_size, show_solution=show_solution, title=title)
+        self.nonogramwidget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.nonogramwidget.setStyleSheet("background: transparent;")  # <-- remove black box
+
+        self.setCentralWidget(self.nonogramwidget)
         self.resize(800, 800)
+
 
 def nonogram_clues(matrix):
     # Generate row and column clues
@@ -142,7 +155,9 @@ def main():
     parser.add_argument('filename', type=str, help='Path to the data file')
     parser.add_argument('--cell-size', type=int, default=20, help='Size of each cell in the grid')
     parser.add_argument('--solution', action='store_true', help='Display the solution')
-    parser.add_argument('-o', '--output', type=str, help='Save the nonogram as an SVG file with the given filename (no extension)')
+    parser.add_argument('-s', '--save', action='store_true', help='Save the nonogram as a PDF file')
+    parser.add_argument('-t', '--title', type=str, default='Nonogram', help='Title of the nonogram, used for PDF filename also if saving')
+    parser.add_argument('--resolution', type=int, default=100, help='Resolution of the saved PDF in DPI')
     args = parser.parse_args()
 
     data = np.loadtxt(args.filename, delimiter=',', dtype=int)
@@ -159,12 +174,16 @@ def main():
         print(clues)
 
     app = QApplication(sys.argv)
-    win = NonogramWindow(data, row_clues, col_clues, cell_size=args.cell_size, show_solution=args.solution)
+    win = NonogramWindow(data, row_clues, col_clues, cell_size=args.cell_size, show_solution=args.solution, title=args.title)
     win.show()
 
-    if args.output:
-        outfile_name = args.output + '_solution.svg' if args.solution else args.output + '.svg'
-        save_nonogram_as_svg(win.centralWidget(), filename=outfile_name)
+    if args.save:
+        if not args.title:
+            print("Error: Title is required when saving the nonogram.")
+            sys.exit(1)
+        s = args.title.replace(' ', '_').lower()
+        outfile_name =  s + '_solution.pdf' if args.solution else s + '.pdf'
+        save_nonogram_as_pdf(win.centralWidget(), filename=outfile_name, resolution=args.resolution)
 
     sys.exit(app.exec())
 
