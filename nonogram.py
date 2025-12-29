@@ -8,21 +8,19 @@ import numpy as np
 
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget
 from PyQt6.QtGui import QPainter, QColor, QPen, QFont, QPdfWriter, QPageSize, QPageLayout
-from PyQt6.QtCore import Qt, QRectF, QSizeF
+from PyQt6.QtCore import Qt, QRectF, QSizeF, QMarginsF
 
 
-def save_nonogram_as_pdf(widget, filename="nonogram.pdf", resolution=100):
+def save_nonogram_as_pdf(widget, filename="nonogram.pdf", resolution=300):
     pdf_writer = QPdfWriter(filename, )
-    #pdf_writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
-    
-    # Set page size to match widget size in points
-    page_size = QPageSize(QSizeF(widget.width(), widget.height()), QPageSize.Unit.Point)
-    pdf_writer.setPageSize(page_size)
-    
-    # Optional: set resolution
+    pdf_writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+
     pdf_writer.setResolution(resolution)
 
     painter = QPainter(pdf_writer)
+
+    painter.scale(2, 2)
+
     widget.render(painter)  # Render the widget onto the PDF
     painter.end()
     print(f"Saved Nonogram as PDF: {filename}")
@@ -157,7 +155,6 @@ def main():
     parser.add_argument('--solution', action='store_true', help='Display the solution')
     parser.add_argument('-s', '--save', action='store_true', help='Save the nonogram as a PDF file')
     parser.add_argument('-t', '--title', type=str, default='Nonogram', help='Title of the nonogram, used for PDF filename also if saving')
-    parser.add_argument('--resolution', type=int, default=100, help='Resolution of the saved PDF in DPI')
     args = parser.parse_args()
 
     data = np.loadtxt(args.filename, delimiter=',', dtype=int)
@@ -165,13 +162,13 @@ def main():
 
     row_clues, col_clues = nonogram_clues(data)
 
-    print("Row clues:")
-    for clues in row_clues:
-        print(clues)
+    #print("Row clues:")
+    #for clues in row_clues:
+    #    print(clues)
 
-    print("Column clues:")
-    for clues in col_clues:
-        print(clues)
+    #print("Column clues:")
+    #for clues in col_clues:
+    #    print(clues)
 
     app = QApplication(sys.argv)
     win = NonogramWindow(data, row_clues, col_clues, cell_size=args.cell_size, show_solution=args.solution, title=args.title)
@@ -183,7 +180,7 @@ def main():
             sys.exit(1)
         s = args.title.replace(' ', '_').lower()
         outfile_name =  s + '_solution.pdf' if args.solution else s + '.pdf'
-        save_nonogram_as_pdf(win.centralWidget(), filename=outfile_name, resolution=args.resolution)
+        save_nonogram_as_pdf(win.centralWidget(), filename=outfile_name)
 
     sys.exit(app.exec())
 
