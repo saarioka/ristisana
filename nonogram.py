@@ -67,7 +67,7 @@ class NonogramWidget(QWidget):
         for i in range(self.grid.shape[0]+1):
             y = self.top_margin + i*self.cell_size
             left_extent = self.cell_size // 2
-            if i % 5 == 0 and i != 0 and i != self.grid.shape[0]:
+            if i % 5 == 0 and i != self.grid.shape[0]:
                 pen = pen_thick
             else:
                 pen = pen_thin
@@ -76,7 +76,7 @@ class NonogramWidget(QWidget):
         for j in range(self.grid.shape[1]+1):
             x = self.left_margin + j*self.cell_size
             top_extent = self.cell_size // 2
-            if j % 5 == 0 and j != 0 and j != self.grid.shape[1]:
+            if j % 5 == 0 and j != self.grid.shape[1]:
                 pen = pen_thick
             else:
                 pen = pen_thin
