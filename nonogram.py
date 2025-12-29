@@ -9,6 +9,22 @@ import numpy as np
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget
 from PyQt6.QtGui import QPainter, QColor, QPen, QFont
 from PyQt6.QtCore import Qt, QRectF
+from PyQt6.QtSvg import QSvgGenerator
+
+
+def save_nonogram_as_svg(widget, filename="nonogram.svg"):
+    generator = QSvgGenerator()
+    generator.setFileName(filename)
+    generator.setSize(widget.size())
+    generator.setViewBox(widget.rect())
+    generator.setTitle("Nonogram")
+    generator.setDescription("Generated from PyQt6 Nonogram widget")
+
+    painter = QPainter(generator)
+    widget.render(painter)  # Render the widget onto the SVG
+    painter.end()
+    print(f"Saved Nonogram as SVG: {filename}")
+
 
 class NonogramWidget(QWidget):
     def __init__(self, grid, row_clues, col_clues, cell_size=20, show_solution=False, parent=None):
@@ -47,26 +63,23 @@ class NonogramWidget(QWidget):
 
         # Draw grid lines
         pen_thin = QPen(Qt.GlobalColor.black, 1)
-        pen_thick = QPen(Qt.GlobalColor.black, 3)
+        pen_thick = QPen(Qt.GlobalColor.black, 2)
         for i in range(self.grid.shape[0]+1):
             y = self.top_margin + i*self.cell_size
-            if i % 5 == 0:
-                left_extent = 0
+            left_extent = self.cell_size // 2
+            if i % 5 == 0 and i != 0 and i != self.grid.shape[0]:
                 pen = pen_thick
             else:
-                left_extent = self.left_margin
                 pen = pen_thin
             painter.setPen(pen)
             painter.drawLine(left_extent, y, self.left_margin + self.grid.shape[1]*self.cell_size, y)
         for j in range(self.grid.shape[1]+1):
             x = self.left_margin + j*self.cell_size
-            if j % 5 == 0:
-                top_extent = 0
+            top_extent = self.cell_size // 2
+            if j % 5 == 0 and j != 0 and j != self.grid.shape[1]:
                 pen = pen_thick
             else:
-                top_extent = self.top_margin
                 pen = pen_thin
-            pen = pen_thick if j % 5 == 0 else pen_thin
             painter.setPen(pen)
             painter.drawLine(x, top_extent, x, self.top_margin + self.grid.shape[0]*self.cell_size)
 
@@ -129,6 +142,7 @@ def main():
     parser.add_argument('filename', type=str, help='Path to the data file')
     parser.add_argument('--cell-size', type=int, default=20, help='Size of each cell in the grid')
     parser.add_argument('--solution', action='store_true', help='Display the solution')
+    parser.add_argument('-o', '--output', type=str, help='Save the nonogram as an SVG file with the given filename (no extension)')
     args = parser.parse_args()
 
     data = np.loadtxt(args.filename, delimiter=',', dtype=int)
@@ -147,6 +161,11 @@ def main():
     app = QApplication(sys.argv)
     win = NonogramWindow(data, row_clues, col_clues, cell_size=args.cell_size, show_solution=args.solution)
     win.show()
+
+    if args.output:
+        outfile_name = args.output + '_solution.svg' if args.solution else args.output + '.svg'
+        save_nonogram_as_svg(win.centralWidget(), filename=outfile_name)
+
     sys.exit(app.exec())
 
 
