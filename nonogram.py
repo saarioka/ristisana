@@ -477,8 +477,8 @@ def nonogram_solve2(row_clues, col_clues, plot=False):
     sum_r = [sum(rc) for rc in row_clues]
     sum_c = [sum(cc) for cc in col_clues]
 
-    print("Row sums:", sum_r)
-    print("Column sums:", sum_c)
+    print("Row sums:", sum_r, len(sum_r))
+    print("Column sums:", sum_c, len(sum_c))
 
     # make heatmap of sums
     height = len(row_clues)
@@ -527,7 +527,7 @@ def nonogram_solve2(row_clues, col_clues, plot=False):
             guess0[ind2] += f
             whitespace_guess = guess0
         else:
-            # Come utp with a random partition of the whitespace
+            # Come up with a random partition of the whitespace
             # Optional whitespace can be on both ends -> +1
             whitespace_guess = random_int_partition_with_zeros_np(sum_whitespace, len(clues) + 1)
 
@@ -549,25 +549,73 @@ def nonogram_solve2(row_clues, col_clues, plot=False):
 
         return line
     
-    def cost(grid):
-        total_cost = np.abs(np.sum(grid==1, axis=0) - np.array(sum_c))
+    def cost(g, block_count_weight=10):
+        # difference in number of filled cells vs clues
+        total_cost = np.abs(np.sum(g==1, axis=0) - np.array(sum_c))
+
+        # block count difference
+        n_block_diff = 0
+        def count_blocks(line):
+            count = 0
+            in_block = False
+            for v in line:
+                if v == 1:
+                    if not in_block:
+                        count += 1
+                        in_block = True
+                else:
+                    in_block = False
+            return count
+
+        nblocks = [count_blocks(g[:,c]) for c in range(width)]
+        total_cost += block_count_weight * np.abs(np.array(nblocks) - np.array([len(cc) for cc in col_clues]))
         return total_cost
     
-    lowest_cost = np.inf * np.ones(height)
+    # Starting point: random guess
+    attempts = 1000
+    lowest_cost = np.inf * np.ones(width)
     best_guess = np.zeros((height, width), dtype=int)
-    for attempt in range(10):
+    for attempt in range(attempts):
         guess_grid = np.zeros((height, width), dtype=int)
+
+        # guess rows, compare to column clues
         for r in range(height):
             guess_grid[r,:] = construct_guess(row_clues[r], width)
 
-        c = cost(guess_grid)
-        print("Attempt", attempt, "cost:", np.sum(c))
+        latest_cost = cost(guess_grid)
+        print("Attempt", attempt, "cost:", np.sum(latest_cost), 'Best so far:', np.sum(lowest_cost))
 
-        for r in range(height):
-            if c[r] < lowest_cost[r]:
-                lowest_cost[r] = c[r]
-                best_guess[r,:] = guess_grid[r,:]
+        for c in range(width):
+            if latest_cost[c] < lowest_cost[c]:
+                lowest_cost[c] = latest_cost[c]
+                best_guess[:,c] = guess_grid[:,c]
+
+        if np.sum(lowest_cost) == 0:
+            print("Found valid solution!")
+            plot_nonogram(guess_grid, title='Valid solution')
+            break
     
+    # fine tune best guess
+    for fine in range(1000):
+        for r in range(height):
+            guess_grid[r,:] = construct_guess(row_clues[r], width, force=2, guess0=best_guess[r,:].tolist())
+        
+        latest_cost = cost(guess_grid)
+        print("Fine tuning", fine, "cost:", np.sum(latest_cost), 'Best so far:', np.sum(lowest_cost))
+
+        for c in range(width):
+            if latest_cost[c] < lowest_cost[c]:
+                lowest_cost[c] = latest_cost[c]
+        
+        for c in range(width):
+            if latest_cost[c] < lowest_cost[c]:
+                lowest_cost[c] = latest_cost[c]
+                best_guess[:,c] = best_guess[:,c]
+                print("Found valid solution during fine tuning!")
+                plot_nonogram(best_guess, title='Valid solution')
+                break
+    
+    print("Lowest cost per row:", lowest_cost)
     plot_nonogram(best_guess, title='Random guess')
     
 
@@ -603,6 +651,7 @@ def main():
     logging.debug("Column clues:")
     for clues in col_clues:
         logging.debug(clues)
+        print(clues)
     
     plot_nonogram(data, title='Ground truth')
 
