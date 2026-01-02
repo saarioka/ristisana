@@ -153,14 +153,14 @@ def nonogram_clues(matrix):
 def plot_nonogram(grid, title='Nonogram'):
     plt.figure(figsize=(7,7))
     plt.imshow(grid, cmap='RdYlBu', interpolation='none')
-    plt.xticks(np.arange(-0.5, grid.shape[1], 1), [])
-    plt.yticks(np.arange(-0.5, grid.shape[0], 1), [])
+    #plt.xticks(np.arange(-0.5, grid.shape[1], 1), [])
+    #plt.yticks(np.arange(-0.5, grid.shape[0], 1), [])
     plt.grid(color='black', linestyle='-', linewidth=1)
     # coarse grid lines every 5 cells
-    for x in range(-1, grid.shape[1], 5):
-        plt.axvline(x + 0.5, color='black', linestyle='-', linewidth=2)
-    for y in range(-1, grid.shape[0], 5):
-        plt.axhline(y + 0.5, color='black', linestyle='-', linewidth=2)
+    #for x in range(-1, grid.shape[1], 5):
+    #    plt.axvline(x + 0.5, color='black', linestyle='-', linewidth=2)
+    #for y in range(-1, grid.shape[0], 5):
+    #    plt.axhline(y + 0.5, color='black', linestyle='-', linewidth=2)
     plt.title(title)
 
 
@@ -518,9 +518,9 @@ def nonogram_solve2(row_clues, col_clues, plot=False):
         # Total length - otal length of blocks - mandatory spaces between blocks
         sum_whitespace = length - sum(clues) - (len(clues) - 1)
 
-        if guess0 is not None and force is not None:
-            ind1 = random.randint(0, length-1)
-            ind2 = random.randint(0, length-1)
+        if guess0 is not None:
+            ind1 = random.randint(0, len(guess0)-1)
+            ind2 = random.randint(0, len(guess0)-1)
             # subtract "force" from one random position and add to another
             f = max(0, min(guess0[ind1], force))
             guess0[ind1] -= f
@@ -530,6 +530,8 @@ def nonogram_solve2(row_clues, col_clues, plot=False):
             # Come up with a random partition of the whitespace
             # Optional whitespace can be on both ends -> +1
             whitespace_guess = random_int_partition_with_zeros_np(sum_whitespace, len(clues) + 1)
+            if sum(whitespace_guess) != sum_whitespace:
+                print("Error in whitespace partitioning")
 
         #print(f"Whitespace guess (total {sum_whitespace}, num {len(clues)}):", whitespace_guess)
         line = []
@@ -546,8 +548,10 @@ def nonogram_solve2(row_clues, col_clues, plot=False):
         # trailing whitespace if any
         for j in range(whitespace_guess[-1]):
             line.append(0)
-
-        return line
+        
+        #print(line, whitespace_guess)
+        
+        return line, whitespace_guess
     
     def cost(g, block_count_weight=10):
         # difference in number of filled cells vs clues
@@ -577,10 +581,13 @@ def nonogram_solve2(row_clues, col_clues, plot=False):
     best_guess = np.zeros((height, width), dtype=int)
     for attempt in range(attempts):
         guess_grid = np.zeros((height, width), dtype=int)
+        whitespace_guess = []
 
         # guess rows, compare to column clues
         for r in range(height):
-            guess_grid[r,:] = construct_guess(row_clues[r], width)
+            gg, ws = construct_guess(row_clues[r], width)
+            guess_grid[r,:] = gg
+            whitespace_guess.append(ws)
 
         latest_cost = cost(guess_grid)
         print("Attempt", attempt, "cost:", np.sum(latest_cost), 'Best so far:', np.sum(lowest_cost))
@@ -595,10 +602,29 @@ def nonogram_solve2(row_clues, col_clues, plot=False):
             plot_nonogram(guess_grid, title='Valid solution')
             break
     
+    plot_nonogram(best_guess, title='Best guess after random sampling: cost {}'.format(np.sum(lowest_cost)))
+
+    print("best whitespace:", best_whitespace)
+
+
+    return
+    
+    # get the whitespace map from the best guess
+    whitespaces = []
+    for r in range(height):
+        _, ws = construct_guess(row_clues[r], width)
+        whitespaces.append(ws)
+    
+    print('whitespaces:', whitespaces)
+    
     # fine tune best guess
     for fine in range(1000):
         for r in range(height):
-            guess_grid[r,:] = construct_guess(row_clues[r], width, force=2, guess0=best_guess[r,:].tolist())
+            gg, ws = construct_guess(row_clues[r], width, force=1, guess0=whitespaces[r])
+            guess_grid[r,:] = gg
+            whitespaces[r] = ws
+            if sum(gg) != sum_r[r]:
+                raise ValueError("Error in fine tuning row", r)
         
         latest_cost = cost(guess_grid)
         print("Fine tuning", fine, "cost:", np.sum(latest_cost), 'Best so far:', np.sum(lowest_cost))
@@ -616,7 +642,9 @@ def nonogram_solve2(row_clues, col_clues, plot=False):
                 break
     
     print("Lowest cost per row:", lowest_cost)
-    plot_nonogram(best_guess, title='Random guess')
+    plot_nonogram(best_guess, title='After fine tuning: cost {}'.format(np.sum(lowest_cost)))
+
+    print(row_clues)
     
 
 def main():
