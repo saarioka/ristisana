@@ -188,6 +188,7 @@ def nonogram_solve(row_clues, col_clues, plot=False):
 
     logging.debug("Column spaces inside:  %s", ms)
     logging.debug("Possible column spaces: %s", Ms)
+
     full_rows = np.zeros(height, dtype=bool)
     full_cols = np.zeros(width, dtype=bool)
 
@@ -395,7 +396,108 @@ def nonogram_solve(row_clues, col_clues, plot=False):
 
     plot_nonogram(grid, title='Newly filled rows and columns')
 
+    # residual sums
+
+    # These are filled with deterministic methods
+    filled_r = np.sum(grid == 1, axis=1)
+    filled_c = np.sum(grid == 1, axis=0)
+
+    grid_residual = np.zeros((height, width), dtype=int)
+    for r in range(height):
+        for c in range(width):
+            if grid[r,c] == 0:
+                # The residual sum at this cell (the pressure to be filled, given the mass in the row and column)
+                grid_residual[r,c] = (row_sums[r] + col_sums[c]) - (filled_r[r] + filled_c[c])
+
+    def plot_residual(g):
+        plt.figure(figsize=(7,7))
+        plt.imshow(g, cmap='cividis', interpolation='none')
+        plt.title('Sampling prior')
+        plt.xticks(np.arange(-0.5, g.shape[1], 1), [])
+        plt.yticks(np.arange(-0.5, g.shape[0], 1), [])
+        plt.grid(color='black', linestyle='-', linewidth=1)
+        plt.colorbar()
+        for x in range(-1, g.shape[1], 5):
+            plt.axvline(x + 0.5, color='black', linestyle='-', linewidth=2)
+        for y in range(-1, g.shape[0], 5):
+            plt.axhline(y + 0.5, color='black', linestyle='-', linewidth=2)
+    
+    def verify(g):
+        ''' Verify if the grid g satisfies the nonogram constraints '''
+        # total sums
+        for r in range(height):
+            if np.sum(g[r,:] == 1) != row_sums[r]:
+                return False
+
+        for c in range(width):
+            if np.sum(g[:,c] == 1) != col_sums[c]:
+                return False
+        
+        # number of blocks
+        def count_blocks(line):
+            count = 0
+            in_block = False
+            for v in line:
+                if v == 1:
+                    if not in_block:
+                        count += 1
+                        in_block = True
+                else:
+                    in_block = False
+            return count
+        
+        for r in range(height):
+            if count_blocks(g[r,:]) != len(row_clues[r]):
+                return False
+        for c in range(width):
+            if count_blocks(g[:,c]) != len(col_clues[c]):
+                return False
+        
+        return True
+
+    
+    def sample(g):
+        # rows
+        for r in range(height):
+            if full_rows[r]:
+                continue
+        
+    done = False
+    while not done:
+        plot_residual(grid_residual)
+        plt.show()
+
     return grid
+
+
+def nonogram_solve2(row_clues, col_clues, plot=False):
+    sum_r = [sum(rc) for rc in row_clues]
+    sum_c = [sum(cc) for cc in col_clues]
+
+    print("Row sums:", sum_r)
+    print("Column sums:", sum_c)
+
+    # make heatmap of sums
+    height = len(row_clues)
+    width = len(col_clues)
+    grid = np.zeros((height, width), dtype=int)
+    for r in range(height):
+        for c in range(width):
+            grid[r,c] = sum_r[r] + sum_c[c]
+    
+    plt.figure(figsize=(7,7))
+    plt.imshow(grid, interpolation='none')
+    plt.xticks(np.arange(-0.5, grid.shape[1], 1), [])
+    plt.yticks(np.arange(-0.5, grid.shape[0], 1), [])
+    plt.grid(color='black', linestyle='-', linewidth=1)
+    # coarse grid lines every 5 cells
+    for x in range(-1, grid.shape[1], 5):
+        plt.axvline(x + 0.5, color='black', linestyle='-', linewidth=2)
+    for y in range(-1, grid.shape[0], 5):
+        plt.axhline(y + 0.5, color='black', linestyle='-', linewidth=2)
+    plt.title('Row sum heatmap')
+    plt.colorbar()
+    #plot_nonogram(grid, title='Sum heatmap')
 
 
 def main():
@@ -432,6 +534,7 @@ def main():
         logging.debug(clues)
 
     solution = nonogram_solve(row_clues, col_clues, plot=True)
+    #solution = nonogram_solve2(row_clues, col_clues, plot=True)
 
     plt.show()
     exit()
