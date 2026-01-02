@@ -1,7 +1,8 @@
 import sys
-import numpy as np
+import logging
 from argparse import ArgumentParser
 
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -148,6 +149,234 @@ def nonogram_clues(matrix):
     return rows, cols
 
 
+def plot_nonogram(grid, title='Nonogram'):
+    plt.figure(figsize=(7,7))
+    plt.imshow(grid, cmap='RdYlBu', interpolation='none')
+    plt.xticks(np.arange(-0.5, grid.shape[1], 1), [])
+    plt.yticks(np.arange(-0.5, grid.shape[0], 1), [])
+    plt.grid(color='black', linestyle='-', linewidth=1)
+    # coarse grid lines every 5 cells
+    for x in range(-1, grid.shape[1], 5):
+        plt.axvline(x + 0.5, color='black', linestyle='-', linewidth=2)
+    for y in range(-1, grid.shape[0], 5):
+        plt.axhline(y + 0.5, color='black', linestyle='-', linewidth=2)
+    plt.title(title)
+
+
+def nonogram_solve(row_clues, col_clues, plot=False):
+    '''
+    space = mandatory white cell between blocks
+    gap = optional white cell between blocks or at edges
+    '''
+    height = len(row_clues)
+    width = len(col_clues)
+
+    # number of locations for white (including edges)
+    Ns = [len(rc)+1 for rc in row_clues]
+    Ms = [len(cc)+1 for cc in col_clues]
+
+    # number of spaces between the blocks (do not count edges)
+    ns = [n-2 for n in Ns]
+    ms = [m-2 for m in Ms]
+
+    logging.debug("Row spaces inside:     %s", ns)
+    logging.debug("Possible column spaces: %s", Ns)
+
+    logging.debug("Column spaces inside:  %s", ms)
+    logging.debug("Possible column spaces: %s", Ms)
+    full_rows = np.zeros(height, dtype=bool)
+    full_cols = np.zeros(width, dtype=bool)
+
+    for r in range(height):
+        full_rows[r] = sum(row_clues[r]) + ns[r] == width
+    
+    for c in range(width):
+        full_cols[c] = sum(col_clues[c]) + ms[c] == height
+    
+    logging.debug("Fully determined rows:   %s", full_rows)
+    logging.debug("Fully determined columns: %s", full_cols)
+
+    if plot:
+        filled_color = 1
+        empty_color = -1
+        # 2d pixel map of the nonogram with the grid shown
+        grid = np.zeros((height, width), dtype=int)
+
+        # Fill in fully determined rows and columns in gray
+        for r in range(height):
+            if full_rows[r]:
+                idx = 0
+                for block in row_clues[r]:
+                    grid[r, idx:idx+block] = filled_color
+                    idx += block + 1  # +1 for the space
+                    if idx-1 < width:
+                        grid[r, idx-1] = empty_color
+
+        for c in range(width):
+            if full_cols[c]:
+                idx = 0
+                for block in col_clues[c]:
+                    grid[idx:idx+block, c] = filled_color
+                    idx += block + 1  # +1 for the space
+                    if idx-1 < height:
+                        grid[idx-1, c] = empty_color
+    
+    # Calculate permutations of spaces for rows and columns
+    # permuations = size of other dimension - sum of blocks - number of spaces
+    p_h = np.zeros(height, dtype=int)
+    for r in range(height):
+        p_h[r] = width - sum(row_clues[r]) - ns[r]
+    logging.debug("Row permutations: %s", p_h)
+    
+    p_w = np.zeros(width, dtype=int)
+    for c in range(width):
+        p_w[c] = height - sum(col_clues[c]) - ms[c]
+    logging.debug("Column permutations: %s", p_w)
+
+    plot_nonogram(grid, title='Trivial rows and columns')
+
+    # Color tiles based on "leftmost" and "rightmost" placements of blocks
+    # for each row and column, place blocks as far left as possible, then as far right as possible
+    # any cells that are filled in both placements are part of the solution
+    # repeat until no more cells can be filled
+    # (this is a simple solving technique and may not solve all nonograms)
+    changed = True
+    while changed:
+        changed = False
+
+        # Rows
+        for r in range(height):
+            if full_rows[r]:
+                continue
+            
+            end_leftmost = []
+            start_rightmost = []
+
+            # Leftmost placement
+            leftmost = np.zeros(width, dtype=int)
+            idx = 0
+            for b_i, block in enumerate(row_clues[r]):
+                for b in range(block):
+                    leftmost[idx+b] = 1
+                #print(f'Start index {b_i} (left)', idx+block)
+                end_leftmost.append(idx+block)
+                idx += block + 1  # +1 for space
+
+            # Rightmost placement
+            rightmost = np.zeros(width, dtype=int)
+            idx = width
+            for b_i, block in enumerate(reversed(row_clues[r])):
+                for b in range(block):
+                    rightmost[idx-block+b] = 1
+                #print(f'Start index {b_i} (right)', idx-block)
+                start_rightmost.append(idx-block)
+                idx -= block + 1  # +1 for space
+            
+            start_rightmost.reverse()
+            #print(r, 'Leftmost block ends:', end_leftmost, 'Rightmost block starts:', start_rightmost)
+
+            # Cells filled in both placements are part of the solution
+            for b in range(len(start_rightmost)):
+                if end_leftmost[b] <= start_rightmost[b]:
+                    continue
+                print(f'Row {r} filled from {start_rightmost[b]} to {end_leftmost[b]}')
+                for w in range(start_rightmost[b], end_leftmost[b]):
+                    if grid[r,w] != 1:
+                        grid[r,w] = 1
+                        changed = True
+        
+        # Columns
+        for c in range(width):
+            if full_cols[c]:
+                continue
+            
+            end_leftmost = []
+            start_rightmost = []
+
+            # Leftmost placement
+            leftmost = np.zeros(height, dtype=int)
+            idx = 0
+            for b_i, block in enumerate(col_clues[c]):
+                for b in range(block):
+                    leftmost[idx+b] = 1
+                end_leftmost.append(idx+block)
+                idx += block + 1  # +1 for space
+
+            # Rightmost placement
+            rightmost = np.zeros(height, dtype=int)
+            idx = height
+            for b_i, block in enumerate(reversed(col_clues[c])):
+                for b in range(block):
+                    rightmost[idx-block+b] = 1
+                start_rightmost.append(idx-block)
+                idx -= block + 1  # +1 for space
+            
+            start_rightmost.reverse()
+
+            # Cells filled in both placements are part of the solution
+            for b in range(len(start_rightmost)):
+                if end_leftmost[b] <= start_rightmost[b]:
+                    continue
+                print(f'Column {c} filled from {start_rightmost[b]} to {end_leftmost[b]}')
+                for h in range(start_rightmost[b], end_leftmost[b]):
+                    if grid[h,c] != 1:
+                        grid[h,c] = 1
+                        changed = True
+
+    plot_nonogram(grid, title='Wiggle left-right')
+
+    # Find blocks touching a colored edge and fill them in
+
+    for r in range(height):
+        if full_rows[r]:
+            continue
+
+        # From first edge
+        if grid[r,0] == 1:
+            print(f'Row {r} block 0 touches first edge, filling')
+            for b in range(row_clues[r][0]):
+                if grid[r,b] != 1:
+                    grid[r,b] = 1
+                # mark the next one as empty if in bounds
+                if b+1 < width:
+                    grid[r,b+1] = -1
+
+        # From second edge
+        if grid[r,width-1] == 1:
+            print(f'Row {r} block {len(row_clues[r])-1} touches second edge, filling')
+            for b in range(row_clues[r][-1]):
+                if grid[r,width-1-b] != 1:
+                    grid[r,width-1-b] = 1
+                if width-1-b-1 >= 0:
+                    grid[r,width-1-b-1] = -1
+
+    for c in range(width):
+        if full_cols[c]:
+            continue
+
+        # From first edge
+        if grid[0,c] == 1:
+            print(f'Column {c} block 0 touches first edge, filling')
+            for b in range(col_clues[c][0]):
+                if grid[b,c] != 1:
+                    grid[b,c] = 1
+                if b+1 < height:
+                    grid[b+1,c] = -1
+
+        # From second edge
+        if grid[height-1,c] == 1:
+            print(f'Column {c} block {len(col_clues[c])-1} touches second edge, filling')
+            for b in range(col_clues[c][-1]):
+                if grid[height-1-b,c] != 1:
+                    grid[height-1-b,c] = 1
+                if height-1-b-1 >= 0:
+                    grid[height-1-b-1,c] = -1
+
+    plot_nonogram(grid, title='Edge touching blocks')
+
+    return grid
+
+
 def main():
     parser = ArgumentParser(description="Load and display data from a text file.")
     parser.add_argument('filename', type=str, help='Path to the data file')
@@ -155,20 +384,37 @@ def main():
     parser.add_argument('--solution', action='store_true', help='Display the solution')
     parser.add_argument('-s', '--save', action='store_true', help='Save the nonogram as a PDF file')
     parser.add_argument('-t', '--title', type=str, default='Nonogram', help='Title of the nonogram, used for PDF filename also if saving')
+    parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose logging')
     args = parser.parse_args()
 
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG)
+        # disable matplotlib logging
+        logging.getLogger('matplotlib').setLevel(logging.INFO)
+    else:
+        logging.basicConfig(level=logging.INFO)
+
+    logger = logging.getLogger(__name__)
+
     data = np.loadtxt(args.filename, delimiter=',', dtype=int)
-    print(f'Loaded data shape: {data.shape}')
+    logging.debug(f'Loaded data shape: {data.shape}')
 
     row_clues, col_clues = nonogram_clues(data)
+    print(len(row_clues), 'rows,', len(col_clues), 'columns')
 
-    #print("Row clues:")
-    #for clues in row_clues:
-    #    print(clues)
+    logging.debug("Row clues:")
+    for clues in row_clues:
+        logging.debug(clues)
 
-    #print("Column clues:")
-    #for clues in col_clues:
-    #    print(clues)
+    logging.debug("Column clues:")
+    for clues in col_clues:
+        logging.debug(clues)
+
+    solution = nonogram_solve(row_clues, col_clues, plot=True)
+
+    plt.show()
+    exit()
+
 
     app = QApplication(sys.argv)
     win = NonogramWindow(data, row_clues, col_clues, cell_size=args.cell_size, show_solution=args.solution, title=args.title)
