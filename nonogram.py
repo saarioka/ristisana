@@ -178,6 +178,10 @@ def nonogram_solve(row_clues, col_clues, plot=False):
     # number of spaces between the blocks (do not count edges)
     ns = [n-2 for n in Ns]
     ms = [m-2 for m in Ms]
+    
+    # sum of colored blocks. Used for checking full rows/columns
+    row_sums = [sum(rc) for rc in row_clues]
+    col_sums = [sum(cc) for cc in col_clues]
 
     logging.debug("Row spaces inside:     %s", ns)
     logging.debug("Possible column spaces: %s", Ns)
@@ -279,12 +283,12 @@ def nonogram_solve(row_clues, col_clues, plot=False):
             for b in range(len(start_rightmost)):
                 if end_leftmost[b] <= start_rightmost[b]:
                     continue
-                print(f'Row {r} filled from {start_rightmost[b]} to {end_leftmost[b]}')
+                logging.debug(f'Row {r} filled from {start_rightmost[b]} to {end_leftmost[b]}')
                 for w in range(start_rightmost[b], end_leftmost[b]):
                     if grid[r,w] != 1:
                         grid[r,w] = 1
                         changed = True
-        
+
         # Columns
         for c in range(width):
             if full_cols[c]:
@@ -317,7 +321,7 @@ def nonogram_solve(row_clues, col_clues, plot=False):
             for b in range(len(start_rightmost)):
                 if end_leftmost[b] <= start_rightmost[b]:
                     continue
-                print(f'Column {c} filled from {start_rightmost[b]} to {end_leftmost[b]}')
+                logging.debug(f'Column {c} filled from {start_rightmost[b]} to {end_leftmost[b]}')
                 for h in range(start_rightmost[b], end_leftmost[b]):
                     if grid[h,c] != 1:
                         grid[h,c] = 1
@@ -325,7 +329,7 @@ def nonogram_solve(row_clues, col_clues, plot=False):
 
     plot_nonogram(grid, title='Wiggle left-right')
 
-    # Find blocks touching a colored edge and fill them in
+    # Find blocks touching a colored edge and fill them in. Also mark the next cell as empty.
 
     for r in range(height):
         if full_rows[r]:
@@ -333,7 +337,6 @@ def nonogram_solve(row_clues, col_clues, plot=False):
 
         # From first edge
         if grid[r,0] == 1:
-            print(f'Row {r} block 0 touches first edge, filling')
             for b in range(row_clues[r][0]):
                 if grid[r,b] != 1:
                     grid[r,b] = 1
@@ -343,7 +346,6 @@ def nonogram_solve(row_clues, col_clues, plot=False):
 
         # From second edge
         if grid[r,width-1] == 1:
-            print(f'Row {r} block {len(row_clues[r])-1} touches second edge, filling')
             for b in range(row_clues[r][-1]):
                 if grid[r,width-1-b] != 1:
                     grid[r,width-1-b] = 1
@@ -356,7 +358,6 @@ def nonogram_solve(row_clues, col_clues, plot=False):
 
         # From first edge
         if grid[0,c] == 1:
-            print(f'Column {c} block 0 touches first edge, filling')
             for b in range(col_clues[c][0]):
                 if grid[b,c] != 1:
                     grid[b,c] = 1
@@ -365,14 +366,34 @@ def nonogram_solve(row_clues, col_clues, plot=False):
 
         # From second edge
         if grid[height-1,c] == 1:
-            print(f'Column {c} block {len(col_clues[c])-1} touches second edge, filling')
             for b in range(col_clues[c][-1]):
                 if grid[height-1-b,c] != 1:
                     grid[height-1-b,c] = 1
                 if height-1-b-1 >= 0:
                     grid[height-1-b-1,c] = -1
-
+    
     plot_nonogram(grid, title='Edge touching blocks')
+
+    # check for full rows/columns
+    for r in range(height):
+        if not full_rows[r]:
+            if np.sum(grid[r,:] == 1) == row_sums[r]:
+                full_rows[r] = True
+                logging.debug(f'Row {r} is now fully determined')
+                for c in range(width):
+                    if grid[r,c] != 1:
+                        grid[r,c] = -1  # mark empty
+
+    for c in range(width):
+        if not full_cols[c]:
+            if np.sum(grid[:,c] == 1) == col_sums[c]:
+                full_cols[c] = True
+                logging.debug(f'Column {c} is now fully determined')
+                for r in range(height):
+                    if grid[r,c] != 1:
+                        grid[r,c] = -1  # mark empty
+
+    plot_nonogram(grid, title='Newly filled rows and columns')
 
     return grid
 
