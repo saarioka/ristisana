@@ -1,4 +1,5 @@
 import sys
+import random
 import logging
 from argparse import ArgumentParser
 
@@ -396,6 +397,8 @@ def nonogram_solve(row_clues, col_clues, plot=False):
 
     plot_nonogram(grid, title='Newly filled rows and columns')
 
+    return
+
     # residual sums
 
     # These are filled with deterministic methods
@@ -499,6 +502,74 @@ def nonogram_solve2(row_clues, col_clues, plot=False):
     plt.colorbar()
     #plot_nonogram(grid, title='Sum heatmap')
 
+    def random_int_partition_with_zeros_np(total, length):
+        bars = np.sort(np.random.choice(total + length - 1, length - 1, replace=False))
+        parts = np.diff(np.concatenate(([-1], bars, [total + length - 1]))) - 1
+        return parts.tolist()
+    
+    # construct a valid row/column guess using clues
+    def construct_guess(clues, length, force:int=1, guess0=None):
+        '''
+        clues: list of block sizes
+        length: total length of the line
+        guess0: optional initial guess
+        force: if initial guess is given, use this as a magnitude for deviating from it
+        '''
+        # Total length - otal length of blocks - mandatory spaces between blocks
+        sum_whitespace = length - sum(clues) - (len(clues) - 1)
+
+        if guess0 is not None and force is not None:
+            ind1 = random.randint(0, length-1)
+            ind2 = random.randint(0, length-1)
+            # subtract "force" from one random position and add to another
+            f = max(0, min(guess0[ind1], force))
+            guess0[ind1] -= f
+            guess0[ind2] += f
+            whitespace_guess = guess0
+        else:
+            # Come utp with a random partition of the whitespace
+            # Optional whitespace can be on both ends -> +1
+            whitespace_guess = random_int_partition_with_zeros_np(sum_whitespace, len(clues) + 1)
+
+        #print(f"Whitespace guess (total {sum_whitespace}, num {len(clues)}):", whitespace_guess)
+        line = []
+        for i in range(len(clues)):
+            for j in range(whitespace_guess[i]):
+                line.append(0)
+
+            for j in range(clues[i]):
+                line.append(1)
+            
+            if i < len(clues) - 1:
+                line.append(0)  # mandatory space after block
+
+        # trailing whitespace if any
+        for j in range(whitespace_guess[-1]):
+            line.append(0)
+
+        return line
+    
+    def cost(grid):
+        total_cost = np.abs(np.sum(grid==1, axis=0) - np.array(sum_c))
+        return total_cost
+    
+    lowest_cost = np.inf * np.ones(height)
+    best_guess = np.zeros((height, width), dtype=int)
+    for attempt in range(10):
+        guess_grid = np.zeros((height, width), dtype=int)
+        for r in range(height):
+            guess_grid[r,:] = construct_guess(row_clues[r], width)
+
+        c = cost(guess_grid)
+        print("Attempt", attempt, "cost:", np.sum(c))
+
+        for r in range(height):
+            if c[r] < lowest_cost[r]:
+                lowest_cost[r] = c[r]
+                best_guess[r,:] = guess_grid[r,:]
+    
+    plot_nonogram(best_guess, title='Random guess')
+    
 
 def main():
     parser = ArgumentParser(description="Load and display data from a text file.")
@@ -532,9 +603,11 @@ def main():
     logging.debug("Column clues:")
     for clues in col_clues:
         logging.debug(clues)
+    
+    plot_nonogram(data, title='Ground truth')
 
-    solution = nonogram_solve(row_clues, col_clues, plot=True)
-    #solution = nonogram_solve2(row_clues, col_clues, plot=True)
+    #solution = nonogram_solve(row_clues, col_clues, plot=True)
+    solution = nonogram_solve2(row_clues, col_clues, plot=True)
 
     plt.show()
     exit()
