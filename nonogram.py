@@ -153,14 +153,14 @@ def nonogram_clues(matrix):
 def plot_nonogram(grid, title='Nonogram'):
     plt.figure(figsize=(7,7))
     plt.imshow(grid, cmap='RdYlBu', interpolation='none')
-    #plt.xticks(np.arange(-0.5, grid.shape[1], 1), [])
-    #plt.yticks(np.arange(-0.5, grid.shape[0], 1), [])
+    plt.xticks(np.arange(-0.5, grid.shape[1], 1), [])
+    plt.yticks(np.arange(-0.5, grid.shape[0], 1), [])
     plt.grid(color='black', linestyle='-', linewidth=1)
     # coarse grid lines every 5 cells
-    #for x in range(-1, grid.shape[1], 5):
-    #    plt.axvline(x + 0.5, color='black', linestyle='-', linewidth=2)
-    #for y in range(-1, grid.shape[0], 5):
-    #    plt.axhline(y + 0.5, color='black', linestyle='-', linewidth=2)
+    for x in range(-1, grid.shape[1], 5):
+        plt.axvline(x + 0.5, color='black', linestyle='-', linewidth=2)
+    for y in range(-1, grid.shape[0], 5):
+        plt.axhline(y + 0.5, color='black', linestyle='-', linewidth=2)
     plt.title(title)
 
 
@@ -647,6 +647,249 @@ def nonogram_solve2(row_clues, col_clues, plot=False):
     print(row_clues)
     
 
+def nonogram_solve3(row_clues, col_clues, plot=False):
+    sum_r = [sum(rc) for rc in row_clues]
+    sum_c = [sum(cc) for cc in col_clues]
+
+    nblocks_r = [len(rc) for rc in row_clues]
+    nblocks_c = [len(cc) for cc in col_clues]
+
+    print("Row sums:", sum_r, len(sum_r))
+    print("Column sums:", sum_c, len(sum_c))
+    print("Row block counts:", nblocks_r, len(nblocks_r))
+    print("Column block counts:", nblocks_c, len(nblocks_c))
+
+    # make heatmap of sums
+    height = len(row_clues)
+    width = len(col_clues)
+    grid = np.zeros((height, width), dtype=int)
+    for r in range(height):
+        for c in range(width):
+            grid[r,c] = sum_r[r] + sum_c[c]
+    
+    if plot:
+        plt.figure(figsize=(7,7))
+        plt.imshow(grid, interpolation='none')
+        plt.xticks(np.arange(-0.5, grid.shape[1], 1), [])
+        plt.yticks(np.arange(-0.5, grid.shape[0], 1), [])
+        plt.grid(color='black', linestyle='-', linewidth=1)
+        # coarse grid lines every 5 cells
+        for x in range(-1, grid.shape[1], 5):
+            plt.axvline(x + 0.5, color='black', linestyle='-', linewidth=2)
+        for y in range(-1, grid.shape[0], 5):
+            plt.axhline(y + 0.5, color='black', linestyle='-', linewidth=2)
+        plt.title('Row sum heatmap')
+        plt.colorbar()
+    
+    print("Total filled cells needed:", sum(sum_r), 'out of ', height*width, f'({100*sum(sum_r)/(height*width):.2f}%)')
+    
+    # get indices of top X highest sum cells withing grid by sorting and taking first X elements
+    X = sum(sum_r)
+    indices = np.dstack(np.unravel_index(np.argsort(-grid.ravel()), grid.shape))[0][:X]
+
+    # create solution grid
+    grid2 = np.zeros((height, width), dtype=int)
+    for idx in indices:
+        grid2[idx[0], idx[1]] = 1  # mark as filled
+
+    if plot:
+        plot_nonogram(grid2, title='Greedy highest sum selection')
+
+
+    def cost(g):
+        # difference in number of filled cells vs clues in both directions
+        #cost_c = np.abs(np.sum(g==1, axis=0) - np.array(sum_c))
+        #cost_r = np.abs(np.sum(g==1, axis=1) - np.array(sum_r))
+        #total_cost = sum(cost_c) + sum(cost_r)
+
+        cost_c = np.sum(g==1, axis=0) - np.array(sum_c)
+        cost_r = np.sum(g==1, axis=1) - np.array(sum_r)
+        print(cost_c, cost_r)
+
+        # 2d grid of costs
+        cost_grid = np.zeros((height, width), dtype=int)
+        for r in range(height):
+            for c in range(width):
+                cost_grid[r,c] = cost_r[r] + cost_c[c]
+
+        total_cost = sum(np.abs(cost_c)) + sum(np.abs(cost_r))
+
+        # block count difference
+        n_block_diff = 0
+        def count_blocks(line):
+            count = 0
+            in_block = False
+            for v in line:
+                if v == 1:
+                    if not in_block:
+                        count += 1
+                        in_block = True
+                else:
+                    in_block = False
+            return count
+
+        best_nblocks_r = [count_blocks(g[r,:]) for r in range(height)]
+        best_nblocks_c = [count_blocks(g[:,c]) for c in range(width)]
+
+        print("- Current block counts rows:", best_nblocks_r, len(best_nblocks_r))
+        print("- Current block counts cols:", best_nblocks_c, len(best_nblocks_c))
+
+        block_count_weight = width + height
+        block_count_weight = 5
+        
+        # if the number of blocks are different, add a large penalty
+        #total_cost += block_count_weight * np.sum(np.abs(np.array(best_nblocks_r) - np.array(nblocks_r)))
+        #total_cost += block_count_weight * np.sum(np.abs(np.array(best_nblocks_c) - np.array(nblocks_c)))
+
+        # if the determined block sizes are the same, compare the difference in size
+        def get_block_sizes(line):
+            sizes = []
+            count = 0
+            in_block = False
+            for v in line:
+                if v == 1:
+                    count += 1
+                    in_block = True
+                else:
+                    if in_block:
+                        sizes.append(count)
+                        count = 0
+                        in_block = False
+            if in_block:
+                sizes.append(count)
+            return sizes
+                
+        for r in range(height):
+            if best_nblocks_r[r] == nblocks_r[r]:
+                best_sizes = get_block_sizes(g[r,:])
+                true_sizes = row_clues[r]
+                for i in range(len(true_sizes)):
+                    total_cost += abs(best_sizes[i] - true_sizes[i])
+        
+        for c in range(width):
+            if best_nblocks_c[c] == nblocks_c[c]:
+                best_sizes = get_block_sizes(g[:,c])
+                true_sizes = col_clues[c]
+                for i in range(len(true_sizes)):
+                    total_cost += abs(best_sizes[i] - true_sizes[i])
+
+        return total_cost, cost_r, cost_c
+    
+    def swap_optimize(grid, N=3, iterations=1000):
+        ''' switch N filled cells with N empty cells and see if cost improves '''
+        g = grid.copy()
+        best_cost, _, _ = cost(g)
+        for iteration in range(iterations):
+            filled_indices = np.argwhere(g == 1)
+            empty_indices = np.argwhere(g == 0)
+
+            total_cost, cost_r, cost_c = cost(g)
+
+            print("Total cost grid sum:", total_cost)
+            print("Row costs:", cost_r)
+            print("Column costs:", cost_c)
+
+            #plt.figure(figsize=(7,7))
+            #plt.imshow(cost_grid, cmap='cividis', interpolation='none')
+            #plt.colorbar()
+            #plt.show()
+
+            #selected_filled = filled_indices[np.random.choice(filled_indices.shape[0], N, replace=False)]
+            #selected_empty = empty_indices[np.random.choice(empty_indices.shape[0], N, replace=False)]
+
+            # weighted random choice based on cost contribution. Choose N columns and rows with highest cost.
+            #cr = np.abs(cost_r)
+            #cc = np.abs(cost_c)
+            #cc[cc == 0] = 1
+            #cr[cr == 0] = 1
+
+            # The most positive errors (excess of filled cells)
+            cr = cost_r.copy()
+            cc = cost_c.copy()
+            cr[cr < 1] = 1
+            cc[cc < 1] = 1
+
+            #cr = [2**float(cr) for cr in cr]
+            #cc = [2**float(cc) for cc in cc]
+
+            row_probs = cr / np.sum(cr)
+            col_probs = cc / np.sum(cc)
+
+            #print("Row selection probabilities:", row_probs)
+            #print("Column selection probabilities:", col_probs)
+
+            selected_rows_pos = np.random.choice(height, N, replace=False, p=row_probs)
+            selected_cols_pos = np.random.choice(width, N, replace=False, p=col_probs)
+
+            #print("Selected rows, pos:", selected_rows_pos)
+            #print("Selected cols, pos:", selected_cols_pos)
+
+            # The most negative errors (deficit of filled cells)
+            cr = -1*cost_r.copy()
+            cc = -1*cost_c.copy()
+            cr[cr < 1] = 1
+            cc[cc < 1] = 1
+
+            row_probs = cr / np.sum(cr)
+            col_probs = cc / np.sum(cc)
+
+            #print("Row selection probabilities:", row_probs)
+            #print("Column selection probabilities:", col_probs)
+
+            selected_rows_neg = np.random.choice(height, N, replace=False, p=row_probs)
+            selected_cols_neg = np.random.choice(width, N, replace=False, p=col_probs)
+
+            #print("Selected rows, neg:", selected_rows_neg)
+            #print("Selected cols, neg:", selected_cols_neg)
+
+            #g[selected_filled[:,0], selected_filled[:,1]] = 0
+            #g[selected_empty[:,0], selected_empty[:,1]] = 1
+
+            # perform the swaps from positive to negative
+            for i in range(N):
+                r_pos = selected_rows_pos[i]
+                c_pos = selected_cols_pos[i]
+                r_neg = selected_rows_neg[i]
+                c_neg = selected_cols_neg[i]
+
+                # only swap if the positions are valid
+                #if g[r_pos, c_pos] == 1 and g[r_neg, c_neg] == 0:
+                #    g[r_pos, c_pos] = 0
+                #    g[r_neg, c_neg] = 1
+
+            new_cost, _, _ = cost(g)
+            print(f"\nIteration {iteration}, cost: {new_cost}, best cost: {best_cost}")
+            if new_cost < best_cost:
+                best_cost = new_cost
+                print("Improved cost!")
+            else:
+                # revert the change
+                #g[selected_filled[:,0], selected_filled[:,1]] = 1
+                #g[selected_empty[:,0], selected_empty[:,1]] = 0
+                for i in range(N):
+                    r_pos = selected_rows_pos[i]
+                    c_pos = selected_cols_pos[i]
+                    r_neg = selected_rows_neg[i]
+                    c_neg = selected_cols_neg[i]
+
+                    #if g[r_pos, c_pos] == 0 and g[r_neg, c_neg] == 1:
+                    #    g[r_pos, c_pos] = 1
+                    #    g[r_neg, c_neg] = 0
+        return g
+    
+    grid = swap_optimize(grid, N=2, iterations=5)
+    plot_nonogram(grid, title='After swapping, N=1')
+
+    #grid = swap_optimize(grid2, N=3, iterations=1000)
+    #plot_nonogram(grid, title='After swapping, N=3')
+
+    #grid = swap_optimize(grid, N=2, iterations=1000)
+    #plot_nonogram(grid, title='After swapping, N=2')
+
+    #grid = swap_optimize(grid, N=1, iterations=1000)
+    #plot_nonogram(grid, title='After swapping, N=1')
+
+
 def main():
     parser = ArgumentParser(description="Load and display data from a text file.")
     parser.add_argument('filename', type=str, help='Path to the data file')
@@ -679,12 +922,13 @@ def main():
     logging.debug("Column clues:")
     for clues in col_clues:
         logging.debug(clues)
-        print(clues)
+        #print(clues)
     
     plot_nonogram(data, title='Ground truth')
 
     #solution = nonogram_solve(row_clues, col_clues, plot=True)
-    solution = nonogram_solve2(row_clues, col_clues, plot=True)
+    #solution = nonogram_solve2(row_clues, col_clues, plot=True)
+    solution = nonogram_solve3(row_clues, col_clues, plot=True)
 
     plt.show()
     exit()
