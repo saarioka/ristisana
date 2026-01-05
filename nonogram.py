@@ -1,3 +1,4 @@
+import os
 import sys
 import random
 import logging
@@ -14,8 +15,13 @@ from PyQt6.QtCore import Qt, QRectF, QSizeF, QMarginsF
 
 
 def save_nonogram_as_pdf(widget, filename="nonogram.pdf", resolution=300):
-    pdf_writer = QPdfWriter(filename, )
-    pdf_writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+    outpath = 'output/' + filename
+    os.makedirs('output', exist_ok=True)
+    pdf_writer = QPdfWriter(outpath, )
+    #pdf_writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+
+    # make sure all elements fit
+    pdf_writer.setPageSize(QPageSize(QSizeF(widget.width()/150.0, widget.height()/150.0), QPageSize.Unit.Inch))
 
     pdf_writer.setResolution(resolution)
 
@@ -397,9 +403,8 @@ def nonogram_solve(row_clues, col_clues, plot=False):
 
     plot_nonogram(grid, title='Newly filled rows and columns')
 
-    return
 
-    # residual sums
+    #
 
     # These are filled with deterministic methods
     filled_r = np.sum(grid == 1, axis=1)
@@ -411,6 +416,8 @@ def nonogram_solve(row_clues, col_clues, plot=False):
             if grid[r,c] == 0:
                 # The residual sum at this cell (the pressure to be filled, given the mass in the row and column)
                 grid_residual[r,c] = (row_sums[r] + col_sums[c]) - (filled_r[r] + filled_c[c])
+    
+    plot_nonogram(grid_residual, title='Residual sums')
 
     def plot_residual(g):
         plt.figure(figsize=(7,7))
@@ -425,7 +432,7 @@ def nonogram_solve(row_clues, col_clues, plot=False):
         for y in range(-1, g.shape[0], 5):
             plt.axhline(y + 0.5, color='black', linestyle='-', linewidth=2)
     
-    def verify(g):
+    def finished(g):
         ''' Verify if the grid g satisfies the nonogram constraints '''
         # total sums
         for r in range(height):
@@ -452,25 +459,34 @@ def nonogram_solve(row_clues, col_clues, plot=False):
         for r in range(height):
             if count_blocks(g[r,:]) != len(row_clues[r]):
                 return False
+
         for c in range(width):
             if count_blocks(g[:,c]) != len(col_clues[c]):
                 return False
         
         return True
+    
+    def verify(row:int, column:int):
+        ''' Verify if nonogram can be solved '''
 
     
-    def sample(g):
-        # rows
-        for r in range(height):
-            if full_rows[r]:
-                continue
-        
-    done = False
-    while not done:
-        plot_residual(grid_residual)
-        plt.show()
+    # sanity check
+    if verify(grid):
+        print("Nonogram solved with deterministic methods!")
+        plot_nonogram(grid, title='Solved nonogram')
+        return grid
+    
+    # order the coordinates by cell values
+    coords = []
+    for r in range(height):
+        for c in range(width):
+            if grid[r,c] == 0:
+                coords.append((r,c, grid_residual[r,c]))
+    coords.sort(key=lambda x: x[2], reverse=True)  # sort by residual value
 
-    return grid
+    # fill the grid based on the ordered coordinates and see if the solution is still valid
+
+
 
 
 def nonogram_solve2(row_clues, col_clues, plot=False):
@@ -775,17 +791,17 @@ def nonogram_solve3(row_clues, col_clues, plot=False):
 
         return total_cost, cost_r, cost_c
     
-    def swap_optimize(grid, N=3, iterations=1000):
+    def swap_optimize(grid_original, N=3, iterations=1000):
         ''' switch N filled cells with N empty cells and see if cost improves '''
-        g = grid.copy()
-        best_cost, _, _ = cost(g)
+        best_cost = np.inf
+        grid = grid_original.copy()
         for iteration in range(iterations):
-            filled_indices = np.argwhere(g == 1)
-            empty_indices = np.argwhere(g == 0)
+            #filled_indices = np.argwhere(g == 1)
+            #empty_indices = np.argwhere(g == 0)
 
-            total_cost, cost_r, cost_c = cost(g)
+            total_cost, cost_r, cost_c = cost(grid)
 
-            print("Total cost grid sum:", total_cost)
+            print("\nTotal cost grid sum:", total_cost)
             print("Row costs:", cost_r)
             print("Column costs:", cost_c)
 
@@ -808,9 +824,6 @@ def nonogram_solve3(row_clues, col_clues, plot=False):
             cc = cost_c.copy()
             cr[cr < 1] = 1
             cc[cc < 1] = 1
-
-            #cr = [2**float(cr) for cr in cr]
-            #cc = [2**float(cc) for cc in cc]
 
             row_probs = cr / np.sum(cr)
             col_probs = cc / np.sum(cc)
@@ -845,6 +858,8 @@ def nonogram_solve3(row_clues, col_clues, plot=False):
             #g[selected_filled[:,0], selected_filled[:,1]] = 0
             #g[selected_empty[:,0], selected_empty[:,1]] = 1
 
+            grid_test = grid.copy()
+
             # perform the swaps from positive to negative
             for i in range(N):
                 r_pos = selected_rows_pos[i]
@@ -853,32 +868,22 @@ def nonogram_solve3(row_clues, col_clues, plot=False):
                 c_neg = selected_cols_neg[i]
 
                 # only swap if the positions are valid
-                #if g[r_pos, c_pos] == 1 and g[r_neg, c_neg] == 0:
-                #    g[r_pos, c_pos] = 0
-                #    g[r_neg, c_neg] = 1
+                if grid_test[r_pos, c_pos] == 0 and grid_test[r_neg, c_neg] == 1:
+                    grid_test[r_pos, c_pos] = 1
+                    grid_test[r_neg, c_neg] = 0
+                #g[r_pos, c_pos] = 0
+                #g[r_neg, c_neg] = 1
 
-            new_cost, _, _ = cost(g)
-            print(f"\nIteration {iteration}, cost: {new_cost}, best cost: {best_cost}")
+            new_cost, _, _ = cost(grid_test)
+            print(f"Iteration {iteration}, cost: {new_cost}, best cost: {best_cost}")
             if new_cost < best_cost:
                 best_cost = new_cost
+                grid = grid_test
                 print("Improved cost!")
-            else:
-                # revert the change
-                #g[selected_filled[:,0], selected_filled[:,1]] = 1
-                #g[selected_empty[:,0], selected_empty[:,1]] = 0
-                for i in range(N):
-                    r_pos = selected_rows_pos[i]
-                    c_pos = selected_cols_pos[i]
-                    r_neg = selected_rows_neg[i]
-                    c_neg = selected_cols_neg[i]
-
-                    #if g[r_pos, c_pos] == 0 and g[r_neg, c_neg] == 1:
-                    #    g[r_pos, c_pos] = 1
-                    #    g[r_neg, c_neg] = 0
-        return g
+        return grid
     
-    grid = swap_optimize(grid, N=2, iterations=5)
-    plot_nonogram(grid, title='After swapping, N=1')
+    grid3 = swap_optimize(grid2, N=2, iterations=10000)
+    plot_nonogram(grid3, title='After swapping, N=2')
 
     #grid = swap_optimize(grid2, N=3, iterations=1000)
     #plot_nonogram(grid, title='After swapping, N=3')
@@ -892,12 +897,13 @@ def nonogram_solve3(row_clues, col_clues, plot=False):
 
 def main():
     parser = ArgumentParser(description="Load and display data from a text file.")
-    parser.add_argument('filename', type=str, help='Path to the data file')
+    parser.add_argument('filename', type=str, nargs='+', help='Path to the data file')
     parser.add_argument('--cell-size', type=int, default=20, help='Size of each cell in the grid')
     parser.add_argument('--solution', action='store_true', help='Display the solution')
     parser.add_argument('-s', '--save', action='store_true', help='Save the nonogram as a PDF file')
-    parser.add_argument('-t', '--title', type=str, default='Nonogram', help='Title of the nonogram, used for PDF filename also if saving')
+    parser.add_argument('-t', '--title', type=str, help='Title of the nonogram, used for PDF filename also if saving')
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose logging')
+    parser.add_argument('-q', '--quiet', action='store_true', help='Suppress GUI execution (for saving only)')
     args = parser.parse_args()
 
     if args.verbose:
@@ -909,44 +915,53 @@ def main():
 
     logger = logging.getLogger(__name__)
 
-    data = np.loadtxt(args.filename, delimiter=',', dtype=int)
-    logging.debug(f'Loaded data shape: {data.shape}')
+    for filename in args.filename:
+        print("\nLoading file:", filename)
+        data = np.loadtxt(filename, delimiter=',', dtype=int)
+        if len(data.shape) != 2 or data.shape[0] < 1 or data.shape[1] < 1 or len(data[:]) == 0:
+            print(f"Could not load valid 2D data from file: {filename}")
+            continue
+        logging.debug(f'Loaded data shape: {data.shape}')
 
-    row_clues, col_clues = nonogram_clues(data)
-    print(len(row_clues), 'rows,', len(col_clues), 'columns')
+        row_clues, col_clues = nonogram_clues(data)
+        print(len(row_clues), 'rows,', len(col_clues), 'columns')
 
-    logging.debug("Row clues:")
-    for clues in row_clues:
-        logging.debug(clues)
+        logging.debug("Row clues:")
+        for clues in row_clues:
+            logging.debug(clues)
 
-    logging.debug("Column clues:")
-    for clues in col_clues:
-        logging.debug(clues)
-        #print(clues)
-    
-    plot_nonogram(data, title='Ground truth')
-
-    #solution = nonogram_solve(row_clues, col_clues, plot=True)
-    #solution = nonogram_solve2(row_clues, col_clues, plot=True)
-    solution = nonogram_solve3(row_clues, col_clues, plot=True)
-
-    plt.show()
-    exit()
+        logging.debug("Column clues:")
+        for clues in col_clues:
+            logging.debug(clues)
+            #print(clues)
+        
+        #plot_nonogram(data, title='Ground truth')
+        #solution = nonogram_solve(row_clues, col_clues, plot=True)
+        #solution = nonogram_solve2(row_clues, col_clues, plot=True)
+        #solution = nonogram_solve3(row_clues, col_clues, plot=True)
+        #plt.show()
+        #exit()
 
 
-    app = QApplication(sys.argv)
-    win = NonogramWindow(data, row_clues, col_clues, cell_size=args.cell_size, show_solution=args.solution, title=args.title)
-    win.show()
+        app = QApplication(sys.argv)
+        win = NonogramWindow(data, row_clues, col_clues, cell_size=args.cell_size, show_solution=args.solution, title=args.title)
 
-    if args.save:
-        if not args.title:
-            print("Error: Title is required when saving the nonogram.")
-            sys.exit(1)
-        s = args.title.replace(' ', '_').lower()
-        outfile_name =  s + '_solution.pdf' if args.solution else s + '.pdf'
-        save_nonogram_as_pdf(win.centralWidget(), filename=outfile_name)
+        if args.save:
+            if args.title:
+                s = args.title
+            else:
+                s = filename.split('/')[-1].split('.')[0]
+            #s = title.replace(' ', '_').lower()
+            outfile_name =  s + '_solution.pdf' if args.solution else s + '.pdf'
+            save_nonogram_as_pdf(win.centralWidget(), filename=outfile_name)
+        
 
-    sys.exit(app.exec())
+        if not args.quiet:
+            win.show()
+            sys.exit(app.exec())
+        
+        del app
+        del win
 
 
 if __name__ == "__main__":
